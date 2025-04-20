@@ -58,6 +58,10 @@ def load_data(
         all_files = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'images'))
         classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
         instances = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
+    elif dataset_mode == 'miniFrance':
+        all_files = _list_image_files_recursively(os.path.join(data_dir, 'train/images' if is_train else 'val/images'))
+        classes = _list_image_files_recursively(os.path.join(data_dir, 'train/label_indices' if is_train else 'val/label_indices'))
+        instances = None
     else:
         raise NotImplementedError('{} not implemented'.format(dataset_mode))
 
@@ -150,7 +154,7 @@ class ImageDataset(Dataset):
         else:
             pil_instance = None
 
-        if self.dataset_mode == 'cityscapes':
+        if self.dataset_mode == 'cityscapes' or self.dataset_mode == 'miniFrance':
             arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution)
         else:
             if self.is_train:

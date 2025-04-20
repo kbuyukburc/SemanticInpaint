@@ -1,7 +1,8 @@
 import copy
 import functools
 import os
-
+import random
+from .mask import (bbox2mask, brush_stroke_mask, get_irregular_mask, random_bbox, random_cropping_bbox)
 import blobfile as bf
 import torch as th
 import torch.distributed as dist
@@ -40,6 +41,7 @@ class TrainLoop:
         schedule_sampler=None,
         weight_decay=0.0,
         lr_anneal_steps=0,
+        inpainting=False,
     ):
         self.model = model
         self.diffusion = diffusion
@@ -62,6 +64,7 @@ class TrainLoop:
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
         self.weight_decay = weight_decay
         self.lr_anneal_steps = lr_anneal_steps
+        self.inpainting = inpainting
 
         self.step = 0
         self.resume_step = 0
@@ -118,10 +121,15 @@ class TrainLoop:
             self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
             if dist.get_rank() == 0:
                 logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
+                checkpoint = th.load(resume_checkpoint, map_location=dist_util.dev())
+                model_dict = self.model.state_dict()
+
+                # Filter out mismatched params
+                filtered_checkpoint = {k: v for k, v in checkpoint.items() if k in model_dict and v.size() == model_dict[k].size()}
+
                 self.model.load_state_dict(
-                    th.load(
-                        resume_checkpoint, map_location=dist_util.dev()
-                    )
+                    filtered_checkpoint,
+                    strict=False
                 )
 
         dist_util.sync_params(self.model.parameters())
@@ -163,7 +171,7 @@ class TrainLoop:
             or self.step + self.resume_step < self.lr_anneal_steps
         ):
             batch, cond = next(self.data)
-            cond = self.preprocess_input(cond)
+            cond = self.preprocess_input(batch, cond)
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
@@ -262,17 +270,33 @@ class TrainLoop:
 
         dist.barrier()
 
-    def preprocess_input(self, data):
+    def preprocess_input(self, batch, data):
         # move to GPU and change data types
         data['label'] = data['label'].long()
 
         # create one-hot label map
         label_map = data['label']
-        bs, _, h, w = label_map.size()
+        bs, c, h, w = label_map.size()
+        # print(label_map.shape, batch.shape)
         nc = self.num_classes
         input_label = th.FloatTensor(bs, nc, h, w).zero_()
+        if self.inpainting:
+            unique_per_batch = [th.unique(x) for x in label_map]
+            bypass_label_indices = [th.randperm(len(x))[:random.randint(1, len(x))] for x in unique_per_batch]
+            bypass_labels = [x[bypass_label_indices[idx]] for idx, x in enumerate(unique_per_batch)]
+            for idx, bypass_label in enumerate(bypass_labels):
+                if random.random() < 0.3:
+                    bypassed_label = th.where(th.isin(label_map[idx], bypass_label), 0, label_map[idx])
+                    bypassed_image = th.where(th.isin(label_map[idx], bypass_label), batch[idx], 0)
+                else:
+                    mask = self.get_mask(image_size=(h, w))
+                    bypassed_label = th.where(mask == 1, label_map[idx], 0)
+                    bypassed_image = th.where(mask == 1, 0, batch[idx])
+                
+                label_map[idx, :, :, :] = bypassed_label
+                input_label[idx, -3:, :, :] = bypassed_image
         input_semantics = input_label.scatter_(1, label_map, 1.0)
-
+        semantic_weights = th.where(input_semantics[:, :1] == 1, 0.1, 2.0)        
         # concatenate instance map if it exists
         if 'instance' in data:
             inst_map = data['instance']
@@ -284,9 +308,20 @@ class TrainLoop:
             input_semantics = input_semantics * mask
 
         cond = {key: value for key, value in data.items() if key not in ['label', 'instance', 'path', 'label_ori']}
+        cond['semantic_weights'] = semantic_weights
         cond['y'] = input_semantics
 
         return cond
+
+    def get_mask(self, image_size):    
+        if random.random() < 0.5:
+            regular_mask = bbox2mask(image_size, random_bbox())
+            irregular_mask = brush_stroke_mask(image_size, )
+            mask = regular_mask | irregular_mask
+        else:
+            irregular_mask = brush_stroke_mask(image_size, max_loops=10)
+            mask = irregular_mask
+        return th.from_numpy(mask).permute(2,0,1)
 
     def get_edges(self, t):
         edge = th.ByteTensor(t.size()).zero_()

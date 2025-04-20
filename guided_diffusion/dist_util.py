@@ -23,9 +23,10 @@ def setup_dist():
     Setup a distributed process group.
     """
     if dist.is_initialized():
+        print("Distributed training already initialized")
         return
     # os.environ["CUDA_VISIBLE_DEVICES"] = f"{MPI.COMM_WORLD.Get_rank() % GPUS_PER_NODE}"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     comm = MPI.COMM_WORLD
     backend = "gloo" if not th.cuda.is_available() else "nccl"

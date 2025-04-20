@@ -19,7 +19,7 @@ from guided_diffusion.train_util import TrainLoop
 
 def main():
     args = create_argparser().parse_args()
-
+    args.num_classes = args.num_classes + 3 if args.inpainting else args.num_classes
     dist_util.setup_dist()
     logger.configure()
 
@@ -27,6 +27,7 @@ def main():
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
+    print(dist_util.dev())
     model.to(dist_util.dev())
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
@@ -59,6 +60,7 @@ def main():
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
+        inpainting=args.inpainting
     ).run_loop()
 
 
@@ -79,7 +81,8 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
-        is_train=True
+        is_train=True,
+        inpainting=False
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()
