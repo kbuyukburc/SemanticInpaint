@@ -10,7 +10,7 @@ from guided_diffusion.mask import (bbox2mask, brush_stroke_mask, get_irregular_m
 
 from guided_diffusion.image_datasets import load_data
 
-from guided_diffusion import dist_util, logger
+from guided_diffusion import logger
 from guided_diffusion.script_util import (
     model_and_diffusion_defaults,
     create_model_and_diffusion,
@@ -48,7 +48,6 @@ def load_model():
     print(args)
     args.num_classes = args.num_classes + 3 if args.inpainting else args.num_classes
     
-    dist_util.setup_dist()
     logger.configure()
 
     logger.log("creating model and diffusion...")
@@ -56,9 +55,9 @@ def load_model():
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     model.load_state_dict(
-        dist_util.load_state_dict(args.model_path, map_location="cpu")
+        th.load(args.model_path, map_location="cpu")
     )
-    model.to(dist_util.dev())
+    model.to("cuda")
     return model, diffusion
 
 model, diffusion = load_model()
