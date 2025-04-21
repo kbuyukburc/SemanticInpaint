@@ -4,11 +4,7 @@ import argparse
 import os
 import random
 import torch as th
-import torch.distributed as dist
 import torchvision as tv
-from guided_diffusion.mask import (bbox2mask, brush_stroke_mask, get_irregular_mask, random_bbox, random_cropping_bbox)
-
-from guided_diffusion.image_datasets import load_data
 
 from guided_diffusion import logger
 from guided_diffusion.script_util import (
@@ -22,7 +18,6 @@ import argparse
 import warnings
 from torchvision import transforms
 import torch.nn.functional as F
-import cv2
 
 
 def create_argparser():
