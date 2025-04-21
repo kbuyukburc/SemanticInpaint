@@ -18,7 +18,9 @@ import argparse
 import warnings
 from torchvision import transforms
 import torch.nn.functional as F
+import huggingface_hub
 
+model_path = huggingface_hub.hf_hub_download("Kutluhan/SemanticInpaint", "model008000.pt")
 
 def create_argparser():
     defaults = dict(
@@ -28,7 +30,7 @@ def create_argparser():
         num_samples=10000,
         batch_size=1,
         use_ddim=False,
-        model_path="",
+        model_path=model_path,
         results_path="",
         is_train=False,
         s=1.5,
