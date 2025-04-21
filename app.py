@@ -24,7 +24,6 @@ import spaces
 model_path = huggingface_hub.hf_hub_download("Kutluhan/SemanticInpaint", "model008000.pt")
 
 
-@spaces.GPU(duration=240)
 def create_argparser():
     defaults = dict(
         data_dir="",
@@ -114,12 +113,6 @@ def update_drawing_color(label):
         interactive=True
     ), hex_color
 
-tfs = transforms.Compose([
-    transforms.ToPILImage(),
-    transforms.Resize((256, 256)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-])
 tfs_label = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Resize((256, 256), interpolation=transforms.InterpolationMode.NEAREST),
@@ -127,10 +120,17 @@ tfs_label = transforms.Compose([
     # transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
 
+@spaces.GPU(duration=240)
 def generate_image(input_image, semantic_drawing, prob_mask):
     """
     Generate image using the model with adjustable prob_mask parameter.
     """    
+    tfs = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
     img = tfs(input_image).unsqueeze(0)
     # Convert semantic_drawing to numpy array if it's not already
     # 256x256x3
