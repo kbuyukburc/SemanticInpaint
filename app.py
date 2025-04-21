@@ -19,9 +19,12 @@ import warnings
 from torchvision import transforms
 import torch.nn.functional as F
 import huggingface_hub
+import spaces
 
 model_path = huggingface_hub.hf_hub_download("Kutluhan/SemanticInpaint", "model008000.pt")
 
+
+@spaces.GPU(duration=240)
 def create_argparser():
     defaults = dict(
         data_dir="",
