@@ -19,7 +19,7 @@ import warnings
 from torchvision import transforms
 import torch.nn.functional as F
 import huggingface_hub
-import spaces
+# import spaces
 
 model_path = huggingface_hub.hf_hub_download("Kutluhan/SemanticInpaint", "model008000.pt")
 
@@ -120,7 +120,7 @@ tfs_label = transforms.Compose([
     # transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
 
-@spaces.GPU(duration=240)
+# @spaces.GPU(duration=240)
 def generate_image(input_image, semantic_drawing, prob_mask):
     """
     Generate image using the model with adjustable prob_mask parameter.
