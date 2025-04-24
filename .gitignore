@@ -1,4 +1,5 @@
 .DS_Store
+output_mask/
 .ipynb_checkpoints/
 debug*
 datasets/

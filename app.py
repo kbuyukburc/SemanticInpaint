@@ -59,7 +59,7 @@ def load_model():
     model.load_state_dict(
         th.load(args.model_path, map_location="cpu")
     )
-    model.to("cuda:1")
+    model.to("cuda")
     return model, diffusion
 
 model, diffusion = load_model()
@@ -147,7 +147,9 @@ tfs_label = transforms.Compose([
     transforms.ToTensor(),
     # transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
-
+def copy_output_to_input(output_image):
+    return output_image
+    
 # @spaces.GPU(duration=240)
 def generate_image(input_image, semantic_drawing, prob_mask, diffusion_steps):
     """
@@ -159,6 +161,8 @@ def generate_image(input_image, semantic_drawing, prob_mask, diffusion_steps):
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
+    diffusion_steps = 1000
+    print(diffusion_steps)
     img = tfs(input_image).unsqueeze(0)
     # Convert semantic_drawing to numpy array if it's not already
     # 256x256x3
@@ -201,7 +205,9 @@ def generate_image(input_image, semantic_drawing, prob_mask, diffusion_steps):
         progress=True,
     )
     sample = (sample + 1) / 2.0
-    return sample.cpu().numpy()[0].transpose(1, 2, 0)
+    # return sample.cpu().numpy()[0].transpose(1, 2, 0)
+    output_img = sample.cpu().numpy()[0].transpose(1, 2, 0)
+    return output_img  # return twice: for output and new input
 
 with gr.Blocks() as demo:
     gr.Markdown("# Image-to-Image Generation with DDPM")
@@ -240,27 +246,28 @@ with gr.Blocks() as demo:
             container=True
         )
     
-    with gr.Row():
-        prob_mask_slider = gr.Slider(
-            minimum=0.0,
-            maximum=1.0,
-            value=0.5,
-            step=0.01,
-            label="Probability Mask",
-            info="Adjust the probability mask value for image generation"
-        )
-    with gr.Row():
-        diffusion_steps_slider = gr.Slider(
-            minimum=10,
-            maximum=1000,
-            step=10,
-            value=1000,
-            label="Diffusion Steps",
-            info="Number of diffusion steps to use"
-        )
+    # with gr.Row():
+    #     prob_mask_slider = gr.Slider(
+    #         minimum=0.0,
+    #         maximum=1.0,
+    #         value=0.5,
+    #         step=0.01,
+    #         label="Probability Mask",
+    #         info="Adjust the probability mask value for image generation"
+    #     )
+    # with gr.Row():
+    #     diffusion_steps_slider = gr.Slider(
+    #         minimum=10,
+    #         maximum=1000,
+    #         step=10,
+    #         value=1000,
+    #         label="Diffusion Steps",
+    #         info="Number of diffusion steps to use"
+    #     )
     
     with gr.Row():
         generate_btn = gr.Button("Generate Image", size="large")
+       
     
     with gr.Row():
         output_image = gr.Image(
@@ -270,6 +277,9 @@ with gr.Blocks() as demo:
             container=True,
             min_width=400
         )
+    with gr.Row():
+        use_as_input_btn = gr.Button("Use Output as New Input")
+        
     
     # Example images
     gr.Examples(
@@ -280,13 +290,19 @@ with gr.Blocks() as demo:
         ],
         inputs=[input_image, semantic_drawing]
     )
-    
+
     # Connect the generate button
     generate_btn.click(
         fn=generate_image,
-        inputs=[input_image, semantic_drawing, prob_mask_slider, diffusion_steps_slider],
+        inputs=[input_image, semantic_drawing],
         outputs=output_image
     )
+    
+    use_as_input_btn.click(
+            fn=copy_output_to_input,
+            inputs=output_image,
+            outputs=input_image
+        )    
     
     # Connect the dropdown to the update function
     label_dropdown.change(
