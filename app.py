@@ -10,6 +10,7 @@ from guided_diffusion import logger
 from guided_diffusion.script_util import (
     model_and_diffusion_defaults,
     create_model_and_diffusion,
+    recreate_diffusion_with_steps,
     add_dict_to_argparser,
     args_to_dict,
 )
@@ -42,7 +43,9 @@ def create_argparser():
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
     return parser
+    
 args = create_argparser().parse_args()
+print(args)
 def load_model():
     print(args)
     args.num_classes = args.num_classes + 3 if args.inpainting else args.num_classes
@@ -56,7 +59,7 @@ def load_model():
     model.load_state_dict(
         th.load(args.model_path, map_location="cpu")
     )
-    model.to("cuda")
+    model.to("cuda:1")
     return model, diffusion
 
 model, diffusion = load_model()
@@ -81,6 +84,28 @@ label_color_mapping = {
     14: (0, 0, 142),        # Water
     15: (220, 220, 220),    # Clouds & shadows
 }
+
+label_to_name = {
+    0: "No information",
+    1: "Urban fabric",
+    2: "Industrial / commercial",
+    3: "Mine / dump / construction",
+    4: "Artificial non-agricultural",
+    5: "Arable land",
+    6: "Permanent crops",
+    7: "Pastures",
+    8: "Complex & mixed cultivation",
+    9: "Orchards",
+    10: "Forests",
+    11: "Herbaceous vegetation",
+    12: "Open spaces",
+    13: "Wetlands",
+    14: "Water",
+    15: "Clouds & shadows"
+}
+
+name_to_label = {v: k for k, v in label_to_name.items()}
+
 label_color_mapping_ts = th.tensor(list(label_color_mapping.values()))
 
 def create_drawing_canvas():
@@ -94,7 +119,10 @@ def update_drawing_color(label):
     chosen label in the dropdown.
     """
     # Extract label index from dropdown (e.g. "3: (70, 70, 70)" -> 3)
-    label_idx = int(label.split(":")[0])
+    # label_idx = int(label.split(":")[0])
+    
+    # Extract label index from dropdown (e.g. "Water: (0, 0, 142)" -> 14)    
+    label_idx = int(name_to_label[label.split(":")[0]])
     
     # Get RGB color from dictionary, then convert to hex (#RRGGBB)
     color = label_color_mapping[label_idx]
@@ -121,7 +149,7 @@ tfs_label = transforms.Compose([
 ])
 
 # @spaces.GPU(duration=240)
-def generate_image(input_image, semantic_drawing, prob_mask):
+def generate_image(input_image, semantic_drawing, prob_mask, diffusion_steps):
     """
     Generate image using the model with adjustable prob_mask parameter.
     """    
@@ -159,6 +187,9 @@ def generate_image(input_image, semantic_drawing, prob_mask):
     model_kwargs['s'] = args.s
     print(args.s)
 
+    diffusion = recreate_diffusion_with_steps(args, diffusion_steps)
+    print(f"Recreated diffusion with {diffusion_steps} steps")
+    
     sample_fn = (
         diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
     )
@@ -167,7 +198,7 @@ def generate_image(input_image, semantic_drawing, prob_mask):
         (1, 3, 256, 256),
         clip_denoised=args.clip_denoised,
         model_kwargs=model_kwargs,
-        progress=True
+        progress=True,
     )
     sample = (sample + 1) / 2.0
     return sample.cpu().numpy()[0].transpose(1, 2, 0)
@@ -194,12 +225,13 @@ with gr.Blocks() as demo:
                 ),
                 interactive=True
             )
-    
+
+
     with gr.Row():
         label_dropdown = gr.Dropdown(
-            choices=[f"{k}: {label_color_mapping[k]}" for k in label_color_mapping],
+            choices=[f"{label_to_name[k]}: {label_color_mapping[k]}" for k in label_color_mapping],
             label="Select Label",
-            value="0: (0, 0, 0)"   # default selection
+            value=f"No information: {label_to_name[0]}"
         )
         color_display = gr.ColorPicker(
             label="Selected Color",
@@ -216,6 +248,15 @@ with gr.Blocks() as demo:
             step=0.01,
             label="Probability Mask",
             info="Adjust the probability mask value for image generation"
+        )
+    with gr.Row():
+        diffusion_steps_slider = gr.Slider(
+            minimum=10,
+            maximum=1000,
+            step=10,
+            value=1000,
+            label="Diffusion Steps",
+            info="Number of diffusion steps to use"
         )
     
     with gr.Row():
@@ -243,7 +284,7 @@ with gr.Blocks() as demo:
     # Connect the generate button
     generate_btn.click(
         fn=generate_image,
-        inputs=[input_image, semantic_drawing, prob_mask_slider],
+        inputs=[input_image, semantic_drawing, prob_mask_slider, diffusion_steps_slider],
         outputs=output_image
     )
     
@@ -255,4 +296,4 @@ with gr.Blocks() as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=10101)

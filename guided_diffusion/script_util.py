@@ -132,7 +132,18 @@ def create_model_and_diffusion(
     )
     return model, diffusion
 
-
+def recreate_diffusion_with_steps(args, steps):
+    return create_gaussian_diffusion(
+        steps=steps,
+        learn_sigma=args.learn_sigma,
+        noise_schedule=args.noise_schedule,
+        use_kl=args.use_kl,
+        predict_xstart=args.predict_xstart,
+        rescale_timesteps=args.rescale_timesteps,
+        rescale_learned_sigmas=args.rescale_learned_sigmas,
+        timestep_respacing=args.timestep_respacing,
+    )
+    
 def create_model(
     image_size,
     num_classes,
