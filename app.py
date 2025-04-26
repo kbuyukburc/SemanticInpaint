@@ -4,6 +4,7 @@ import argparse
 import os
 import random
 import torch as th
+th.set_float32_matmul_precision('high')
 import torchvision as tv
 
 from guided_diffusion import logger
@@ -65,6 +66,7 @@ def load_model():
 model, diffusion = load_model()
 model.convert_to_fp16()
 model.eval()
+model = th.compile(model, mode="reduce-overhead", fullgraph=True)
 # Label to color mapping
 label_color_mapping = {
     0: (0, 0, 0),           # No information
@@ -188,29 +190,26 @@ def generate_image(input_image, semantic_drawing, num_imgs):
     input_image = th.tensor(np.where(semantic_label == 0, img, 0))
     input_label[0, -3:, :, :] = input_image
     input_semantics = input_label.scatter_(1, th.tensor(semantic_label).long(), 1.0)
-    model_kwargs = {'y': input_semantics,}
+    model_kwargs = {'y': input_semantics.tile(num_imgs, 1, 1, 1),}
     model_kwargs['s'] = args.s
     print(args.s)
-
-    diffusion = recreate_diffusion_with_steps(args, diffusion_steps)
-    print(f"Recreated diffusion with {diffusion_steps} steps")
     
     sample_fn = (
         diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
     )
     
-    output_imgs = []
-    for _ in range(num_imgs): ## Naive batch generation
-        sample = sample_fn(
-            model,
-            (1, 3, 256, 256),
-            clip_denoised=args.clip_denoised,
-            model_kwargs=model_kwargs,
-            progress=True,
-        )
-        sample = (sample + 1) / 2.0
-        sample = sample.cpu().permute(0, 2, 3, 1)
-        output_img = sample.cpu().numpy()[0]#.transpose(1, 2, 0)
+    output_imgs = []    
+    sample = sample_fn(
+        model,
+        (num_imgs, 3, 256, 256),
+        clip_denoised=args.clip_denoised,
+        model_kwargs=model_kwargs,
+        progress=True,
+    )
+    sample = (sample + 1) / 2.0
+    sample = sample.cpu().permute(0, 2, 3, 1)
+    for num in range(num_imgs):
+        output_img = sample.cpu().numpy()[num]
         output_imgs.append(output_img)
     
     return output_imgs  # return twice: for output and new input

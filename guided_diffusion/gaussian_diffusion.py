@@ -254,7 +254,7 @@ class GaussianDiffusion:
         """
         if model_kwargs is None:
             model_kwargs = {}
-
+        th.compiler.cudagraph_mark_step_begin()
         B, C = x.shape[:2]
         assert t.shape == (B,)
         if 'y' in model_kwargs:
