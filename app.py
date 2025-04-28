@@ -21,7 +21,23 @@ import warnings
 from torchvision import transforms
 import torch.nn.functional as F
 import huggingface_hub
+import functools
 # import spaces
+
+# Check if running in Hugging Face Spaces
+is_spaces = os.environ.get("SPACE_ID") is not None
+spaces_decorator = lambda f: f  # Default no-op decorator
+
+if is_spaces:
+    try:
+        import spaces
+        print("Running in Hugging Face Spaces environment")
+        # Create a decorator based on FREE_GPU environment variable
+        free_gpu = os.environ.get("FREE_GPU", "false").lower() == "true"
+        spaces_decorator = functools.partial(spaces.GPU, duration=240, free_gpu=free_gpu)
+    except ImportError:
+        print("spaces module not found, continuing without it")
+        is_spaces = False
 
 model_path = huggingface_hub.hf_hub_download("Kutluhan/SemanticInpaint", "model008000.pt")
 
@@ -66,7 +82,17 @@ def load_model():
 model, diffusion = load_model()
 model.convert_to_fp16()
 model.eval()
-model = th.compile(model, mode="reduce-overhead", fullgraph=True)
+
+# Check if torch compile should be enabled via environment variable
+use_torch_compile = os.environ.get("USE_TORCH_COMPILE", "0").lower() == "1"
+if use_torch_compile:
+    try:
+        print("Enabling PyTorch compilation mode to improve performance")
+        model = th.compile(model, mode="reduce-overhead", fullgraph=True)
+    except Exception as e:
+        print(f"Failed to enable PyTorch compilation mode: {e}")
+        print("Continuing without compilation")
+
 # Label to color mapping
 label_color_mapping = {
     0: (0, 0, 0),           # No information
@@ -118,19 +144,60 @@ def create_drawing_canvas():
 def update_drawing_color(label):
     """
     Update the ImageEditor's brush color based on the 
-    chosen label in the dropdown.
+    chosen label in the dropdown and show helpful hints.
     """
-    # Extract label index from dropdown (e.g. "3: (70, 70, 70)" -> 3)
-    # label_idx = int(label.split(":")[0])
+    # Extract label index from dropdown (e.g. "Water [USE ALONE]: (0, 0, 142)" -> 14)
+    # Handle labels with tags by splitting on ":" and then extracting the base name
+    label_part = label.split(":")[0].strip()
     
-    # Extract label index from dropdown (e.g. "Water: (0, 0, 142)" -> 14)    
-    label_idx = int(name_to_label[label.split(":")[0]])
+    # Extract the base label name without tags
+    if "[USE ALONE]" in label_part:
+        base_label = label_part.replace("[USE ALONE]", "").strip()
+    elif "[DONT USE]" in label_part:
+        base_label = label_part.replace("[DONT USE]", "").strip()
+    else:
+        base_label = label_part
+    
+    # Get the label index
+    label_idx = name_to_label.get(base_label, 0)
     
     # Get RGB color from dictionary, then convert to hex (#RRGGBB)
     color = label_color_mapping[label_idx]
     hex_color = "#{:02x}{:02x}{:02x}".format(*color)
     
-    # Return an update for the existing ImageEditor component
+    # Define message types and hints for each label
+    label_hints = {
+        # Multi-Label Combinations That Work Well (info)
+        1: ("info", "Urban Fabric: Tends to generate city-like structures and dense urban layouts. Works well with Industrial/Commercial."),
+        2: ("info", "Industrial/Commercial: Often produces road networks and industrial complexes. Draw thin lines to simulate roads when using this label."),
+        6: ("info", "Permanent Crops: Generates brown or green agricultural fields."),
+        10: ("info", "Forests: Creates dense forested regions."),
+        14: ("info", "Water: Primarily generates lakes (greenish color) and occasionally seas (bluish color). Combines well with Wetlands."),
+        4: ("info", "Artificial Non-Agricultural Vegetated Areas: Complements urban layouts."),
+        
+        # Labels That Work Well Alone (info)
+        7: ("info", "Pastures: Best used independently."),
+        5: ("info", "Arable Land: Works well individually."),
+        11: ("info", "Herbaceous Vegetation: Sometimes generates white snowy textures. Best used alone."),
+        
+        # Labels That Do Not Perform Well (warning)
+        3: ("warning", "Mine/Dump/Construction: Limited generation quality due to insufficient data."),
+        8: ("warning", "Complex & Mixed Cultivation Patterns: Inconsistent results."),
+        9: ("warning", "Orchards: Often unreliable."),
+        12: ("warning", "Open Spaces with Little or No Vegetation: Sparse or incoherent generation."),
+        15: ("warning", "Clouds & Shadows: Limited performance due to insufficient data."),
+        
+        # Recommended Combinations (info)
+        13: ("info", "Wetlands: Works best when combined with Water to generate more realistic transitions."),
+        
+        # Empty for other labels
+        0: ("", ""),
+    }
+    
+    # Get hint for current label
+    hint_type, hint_text = label_hints.get(label_idx, ("", ""))
+    
+    # Return an update for the existing ImageEditor component and the hint
     return gr.ImageEditor(
         label="Semantic Drawing",
         container=True,
@@ -141,7 +208,7 @@ def update_drawing_color(label):
             default_size=20
         ),
         interactive=True
-    ), hex_color
+    ), hex_color, hint_type, hint_text
 
 tfs_label = transforms.Compose([
     transforms.ToPILImage(),
@@ -152,7 +219,8 @@ tfs_label = transforms.Compose([
 def copy_output_to_input(output_image):
     return output_image
     
-# @spaces.GPU(duration=240)
+# Define the generate_image function with conditional decorator
+@spaces_decorator
 def generate_image(input_image, semantic_drawing, num_imgs):
     """
     Generate image using the model with adjustable prob_mask parameter.
@@ -214,61 +282,6 @@ def generate_image(input_image, semantic_drawing, num_imgs):
     
     return output_imgs  # return twice: for output and new input
 
-## Batching approach
-## 1. Able to generate the inpainted mask with batches
-## 2. Need to overlay the original image with the inpainted mask (TODO)
-# import torch
-# def generate_image(input_image, semantic_drawing, num_imgs: int):
-#     """
-#     Generate `num_imgs` images with the diffusion model.
-#     """
-#     # ------------ preprocessing ------------------------------------------------
-#     tfm = transforms.Compose([
-#         transforms.ToPILImage(),
-#         transforms.Resize((256, 256)),
-#         transforms.ToTensor(),
-#         transforms.Normalize([0.5]*3, [0.5]*3),
-#     ])
-#     diffusion_steps = 30
-
-#     # (1) RGB image → tensor in [-1,1]
-#     img = tfm(input_image).unsqueeze(0)          # (1,3,256,256)  in [-1, 1]
-
-#     # (2) semantic mask → one-hot  (1,19,256,256)
-#     raw = semantic_drawing["composite"][:, :, :3]
-#     semantic_idx = np.zeros(raw.shape[:2], np.uint8)
-#     for k, color in label_color_mapping.items():
-#         semantic_idx[(raw == color).all(-1)] = k
-#     semantic_idx = torch.from_numpy(semantic_idx).unsqueeze(0).unsqueeze(0)  # (1,1,256,256)
-
-#     one_hot = torch.zeros(1, 19, 256, 256, dtype=torch.float32)
-#     one_hot.scatter_(1, semantic_idx.long(), 1.0)
-
-#     # (3) build model kwargs, **repeat along batch dimension**
-#     #     so each of the `num_imgs` samples is conditioned the same way.
-#     input_semantics = one_hot.repeat(num_imgs, 1, 1, 1)        # (N,19,256,256)
-#     model_kwargs = {"y": input_semantics, "s": args.s}
-
-#     # ------------ diffusion ----------------------------------------------------
-#     diffusion = recreate_diffusion_with_steps(args, diffusion_steps)
-
-#     sample_fn = diffusion.ddim_sample_loop if args.use_ddim else diffusion.p_sample_loop
-#     samples = sample_fn(
-#         model,
-#         (num_imgs, 3, 256, 256),               # output batch shape
-#         clip_denoised=args.clip_denoised,
-#         model_kwargs=model_kwargs,
-#         progress=True,
-#     )                                          # (N,3,256,256)
-
-#     # ------------ post-processing ---------------------------------------------
-#     samples = (samples + 1) / 2                                         # back to [0,1]
-#     samples = samples.permute(0, 2, 3, 1).cpu().numpy()                 # (N,256,256,3)
-
-#     # return a Python list of individual images (optional but convenient)
-#     return [samples[i] for i in range(num_imgs)]
-
-    
 def put_clicked_into_input(evt: gr.SelectData):
     """
     evt.value  -> value associated with the clicked item
@@ -288,7 +301,37 @@ def put_selected_into_input(chosen_img):
     return chosen_img
     
 with gr.Blocks() as demo:
-    gr.Markdown("# Image-to-Image Generation with DDPM")
+    gr.Markdown("# Satellite Image Semantic Inpainting with DDPM")
+    
+    # Add recommendations and best practices
+    with gr.Accordion("Usage Guidelines & Best Practices", open=True):
+        gr.Markdown("""
+        ### General Recommendations
+        
+        - **Generate Multiple Samples**: Generate 2-4 samples to explore different variations. Not all outputs are visually satisfying, so multiple samples increase your chance of getting high-quality results.
+        
+        ### Best Practices
+        
+        - **Use Few Classes at a Time**: Start with 1-2 semantic classes, draw them on the mask, and generate images.
+        - **Iterative Editing**: Select the best image from the generated samples as your new base, then add 1-2 more semantic classes and repeat.
+        - **Preserve Context**: Using only 1-2 new mask types at a time helps maintain better visual and semantic context.
+        - **Avoid Large Masks**: Drawing very large masks disrupts spatial coherence. Prefer smaller, targeted edits for better realism.
+        
+        ### Label Indications
+        - Labels marked with **[USE ALONE]** work best independently.
+        - Labels marked with **[DONT USE]** generally produce poor results.
+        - Unmarked labels can be combined for interesting effects.
+        """)
+    
+    # Create modified label names with tags
+    modified_label_names = {}
+    for k, v in label_to_name.items():
+        if k in [7, 5, 11]:  # Labels that work well alone
+            modified_label_names[k] = f"{v} [USE ALONE]"
+        elif k in [3, 8, 9, 12, 15]:  # Labels that don't perform well
+            modified_label_names[k] = f"{v} [DONT USE]"
+        else:
+            modified_label_names[k] = v
     
     with gr.Row():
         with gr.Column(scale=1):
@@ -312,14 +355,12 @@ with gr.Blocks() as demo:
                 height=350
             )
 
-
     with gr.Row(equal_height=True):
         with gr.Column(scale=1):
             label_dropdown = gr.Dropdown(
-                choices=[f"{label_to_name[k]}: {label_color_mapping[k]}" for k in label_color_mapping],
+                choices=[f"{modified_label_names[k]}: {label_color_mapping[k]}" for k in label_color_mapping],
                 label="Select Label",
-                value=f"No information: {label_to_name[0]}",
-                
+                value=f"{modified_label_names[0]}: {label_color_mapping[0]}",
             )
         with gr.Column(scale=1):
             color_display = gr.ColorPicker(
@@ -406,12 +447,28 @@ with gr.Blocks() as demo:
 
     
     
-    # Connect the dropdown to the update function
+    # Add hint components (hidden from UI but used for handling hints)
+    hint_type = gr.Textbox(visible=False)
+    hint_text = gr.Textbox(visible=False)
+
+    # Function to display appropriate notification based on hint type and text
+    def show_notification(hint_type, hint_text):
+        if hint_type == "warning":
+            return gr.Warning(hint_text)
+        elif hint_type == "info":
+            return gr.Info(hint_text)
+        return None
+
+    # Connect the dropdown to update functions
     label_dropdown.change(
         fn=update_drawing_color,
         inputs=label_dropdown,
-        outputs=[semantic_drawing, color_display]
+        outputs=[semantic_drawing, color_display, hint_type, hint_text]
+    ).then(
+        fn=show_notification,
+        inputs=[hint_type, hint_text],
+        outputs=None
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=10101)
+    demo.launch()

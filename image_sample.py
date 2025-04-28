@@ -97,14 +97,15 @@ def main():
         sample_fn = (
             diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
         )
-        sample = sample_fn(
-            model,
-            (args.batch_size, 3, image.shape[2], image.shape[3]),
-            clip_denoised=args.clip_denoised,
-            model_kwargs=model_kwargs,
-            progress=True
-        )
-        sample = (sample + 1) / 2.0
+        # sample = sample_fn(
+        #     model,
+        #     (args.batch_size, 3, image.shape[2], image.shape[3]),
+        #     clip_denoised=args.clip_denoised,
+        #     model_kwargs=model_kwargs,
+        #     progress=True
+        # )
+        # sample = (sample + 1) / 2.0
+        sample = th.zeros(1, 3, image.shape[2], image.shape[3]).to(dist_util.dev())
 
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
@@ -143,7 +144,7 @@ def preprocess_input(batch, data, num_classes, inpainting=False):
         print(unique_per_batch, bypass_labels)
         for idx, bypass_label in enumerate(bypass_labels):
             debug_norm_img = (batch[idx, :, :, :].permute(1, 2, 0) + 1.0) / 2.0
-            if random.random() < 1.0:
+            if random.random() < 0.5:
                 bypassed_label = th.where(th.isin(label_map[idx], bypass_label), 0, label_map[idx])
                 bypassed_image = th.where(th.isin(label_map[idx], bypass_label), batch[idx], 0) 
                 debug_img[idx, :, :, :] = th.where(th.isin(label_map[idx], bypass_label).permute(1,2,0),
