@@ -34,7 +34,7 @@ if is_spaces:
         print("Running in Hugging Face Spaces environment")
         # Create a decorator based on FREE_GPU environment variable
         free_gpu = os.environ.get("FREE_GPU", "false").lower() == "true"
-        spaces_decorator = functools.partial(spaces.GPU, duration=240, free_gpu=free_gpu)
+        spaces_decorator = functools.partial(spaces.GPU, duration=480, free_gpu=free_gpu)
     except ImportError:
         print("spaces module not found, continuing without it")
         is_spaces = False
