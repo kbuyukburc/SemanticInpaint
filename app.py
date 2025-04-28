@@ -400,6 +400,7 @@ with gr.Blocks() as demo:
             ["examples/example5.png", "./examples/example5_mask.png"],
             ["examples/example6.png", "./examples/example6_mask.png"],
             ["examples/example7.png", "./examples/example7_mask.png"],
+            ["examples/example8.png", "./examples/example8_mask.png"],
         ],
         inputs=[input_image, semantic_drawing]
     )
