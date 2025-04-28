@@ -370,24 +370,6 @@ with gr.Blocks() as demo:
                 container=True
             )
     
-    # with gr.Row():
-    #     prob_mask_slider = gr.Slider(
-    #         minimum=0.0,
-    #         maximum=1.0,
-    #         value=0.5,
-    #         step=0.01,
-    #         label="Probability Mask",
-    #         info="Adjust the probability mask value for image generation"
-    #     )
-    # with gr.Row():
-    #     diffusion_steps_slider = gr.Slider(
-    #         minimum=10,
-    #         maximum=1000,
-    #         step=10,
-    #         value=1000,
-    #         label="Diffusion Steps",
-    #         info="Number of diffusion steps to use"
-    #     )
     with gr.Row():
         num_imgs_slider = gr.Slider(
             minimum=1, maximum=4, value=1, step=1,
@@ -398,13 +380,6 @@ with gr.Blocks() as demo:
        
     
     with gr.Row():
-        # output_image = gr.Image(
-        #     label="Generated Image",
-        #     height=256,
-        #     width=256,
-        #     container=True,
-        #     min_width=400
-        # )
         output_image = gr.Gallery(
             label="Generated images",
             height="auto", columns=[4],         # 4 columns looks nice up to 8 images
@@ -421,6 +396,10 @@ with gr.Blocks() as demo:
             ["examples/example1.png", create_drawing_canvas()],
             ["examples/example2.png", create_drawing_canvas()],
             ["examples/example3.png", create_drawing_canvas()],
+            ["examples/example4.png", "./examples/example4_mask.png"],
+            ["examples/example5.png", "./examples/example5_mask.png"],
+            ["examples/example6.png", "./examples/example6_mask.png"],
+            ["examples/example7.png", "./examples/example7_mask.png"],
         ],
         inputs=[input_image, semantic_drawing]
     )
