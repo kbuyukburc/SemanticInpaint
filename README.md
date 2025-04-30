@@ -78,7 +78,7 @@ Link to the Hugging Face (HF) demo - [Hugging Face](https://huggingface.co/space
    python app.py
    ```
    By default, Gradio will run on the public URL.<br />
-   You can also select which pre trained model you want to use (default model008000.pt, fintuned on 30 epocs), available [here](https://huggingface.co/Kutluhan/SemanticInpaint/tree/main).<br />
+   You can also select which pre trained model you want to use (default model008000.pt, finetuned on 30 epocs), available [here](https://huggingface.co/Kutluhan/SemanticInpaint/tree/main).<br />
    The pre-trained model can be changed in the app.py file.
 
 2. **In your browser**  
