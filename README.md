@@ -52,7 +52,10 @@ Link to the Hugging Face (HF) demo - [Hugging Face](https://huggingface.co/space
 
 1. **Clone the HF repository**  
    ```bash
+   sudo apt install git-lfs # install it to pull example images
    git clone https://huggingface.co/spaces/Kutluhan/SemanticInpaint
+   # or
+   git clone https://github.com/kbuyukburc/SemanticInpaint
    cd SemanticInpaint
    ```
 
